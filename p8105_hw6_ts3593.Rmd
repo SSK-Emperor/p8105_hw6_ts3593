@@ -1,0 +1,146 @@
+---
+title: "HW6"
+author: "Shi Tiancheng"
+date: "2024-12-02"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(modelr)
+library(mgcv)
+library(broom)
+```
+
+Problem 2
+```{r}
+# read the data and create the variable: city_state
+homicide_data = read.csv("data/homicide-data.csv", na = c("Unknown", "NA", ""))
+homicide_data = homicide_data |> mutate(city_state = paste(city,state,sep=","))
+```
+
+```{r}
+# clean the dataset
+tidy_homicide_data = filter(homicide_data, 
+                            city_state != "Dallas,TX" & 
+                              city_state != "Phoenix,AZ" & 
+                              city_state != "Kansas City,MO" & 
+                              city_state != "Tulsa,AL" & 
+                              (victim_race == "White" | victim_race == "Black") &
+                              victim_age != "Unknown" &
+                              victim_age != "NA")
+tidy_homicide_data$victim_age = as.numeric(tidy_homicide_data$victim_age)
+tidy_homicide_data = mutate(tidy_homicide_data, 
+                            solved = if_else(disposition == "Closed by arrest", 1, 0))
+```
+
+```{r}
+#filter the data of Baltimore, MD
+Baltimore_homicide_data = filter(tidy_homicide_data,
+                                 city_state == "Baltimore,MD")
+
+```
+
+```{r}
+# fit a glm of Baltimore, MD
+Baltimore_glm = glm(solved~ victim_age+victim_sex+victim_race, data = Baltimore_homicide_data, family = binomial())
+```
+
+```{r}
+Baltimore_glm |> broom::tidy(conf.int = TRUE) |>
+  mutate(OR = exp(estimate), CI.low = exp(conf.low),CI.high = exp(conf.high)) |>
+  filter(term == "victim_sexMale") |>
+  select(term,OR,CI.low,CI.high)
+```
+
+```{r}
+cities_glm = tidy_homicide_data |>
+  group_by(city_state) |>
+  nest() |>
+  mutate(
+    city_glm = map(data, ~ glm(solved ~ victim_age + victim_sex + victim_race, data = ., family = binomial())),
+    oddsratio = map(city_glm, ~ broom::tidy(.x, conf.int = TRUE) |>
+                      mutate(OR = exp(estimate), CI.low = exp(conf.low),CI.high = exp(conf.high)) |>
+                      filter(term == "victim_sexMale") |>
+                      select(term,OR,CI.low,CI.high))) |>
+                      unnest(oddsratio) |>
+  select(city_state, OR, CI.low, CI.high)
+```
+
+```{r}
+cities_glm
+```
+
+```{r}
+ggplot(cities_glm, aes(x=reorder(city_state, OR), y = OR)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = CI.low, ymax = CI.high)) +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))
+```
+
+Problem3
+```{r}
+birthweight = read.csv("data/birthweight.csv")
+birthweight = drop_na(birthweight)
+```
+
+```{r}
+# fit a linear model of birthweight
+birthweight_l_model = lm(bwt~babysex+bhead+blength+delwt, data = birthweight)
+summary(birthweight_l_model)
+```
+
+```{r}
+model_1_data <- birthweight |>
+  add_predictions(birthweight_l_model) |>
+  add_residuals(birthweight_l_model)
+```
+
+```{r}
+#plot the model
+ggplot(model_1_data, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth()
+```
+
+```{r}
+model_blength_gage = lm(bwt~blength + gaweeks, data = birthweight)
+model_head_length_sex = lm(bwt~blength*babysex*bhead, data = birthweight)
+```
+
+```{r}
+compare = crossv_mc(birthweight, 100) |> mutate(train = map(train, as_tibble),
+                                      test = map(test, as_tibble))
+```
+
+```{r}
+compare = compare |> mutate(
+    birthweight_l_model = 
+      map(train, \(df) lm(bwt~babysex+bhead+blength+delwt, data = df)),
+    model_blength_gage = 
+      map(train, \(df) lm(bwt ~ blength+gaweeks, data = df)),
+    model_head_length_sex = 
+      map(train, \(df) lm(bwt ~ bhead*blength*babysex, data = df)),
+    rmse_birthweight_l_model = 
+      map2_dbl(birthweight_l_model, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_model_blength_gage = 
+      map2_dbl(model_blength_gage, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_head_length_sex = 
+      map2_dbl(model_head_length_sex, test, \(mod, df) rmse(model = mod, data = df))
+    
+)
+```
+
+```{r}
+compare |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
