@@ -76,6 +76,7 @@ cities_glm
 ggplot(cities_glm, aes(x=reorder(city_state, OR), y = OR)) +
   geom_point(color = "blue") +
   geom_errorbar(aes(ymin = CI.low, ymax = CI.high)) +
+  labs(x = "city") +
   theme(axis.text.x = element_text(angle = 70, hjust = 1))
 ```
 
@@ -119,9 +120,9 @@ compare = compare |> mutate(
     birthweight_l_model = 
       map(train, \(df) lm(bwt~babysex+bhead+blength+delwt, data = df)),
     model_blength_gage = 
-      map(train, \(df) lm(bwt ~ blength+gaweeks, data = df)),
+      map(train, \(df) lm(bwt~blength+gaweeks, data = df)),
     model_head_length_sex = 
-      map(train, \(df) lm(bwt ~ bhead*blength*babysex, data = df)),
+      map(train, \(df) lm(bwt~bhead*blength*babysex, data = df)),
     rmse_birthweight_l_model = 
       map2_dbl(birthweight_l_model, test, \(mod, df) rmse(model = mod, data = df)),
     rmse_model_blength_gage = 
